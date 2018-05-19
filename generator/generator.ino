@@ -6,6 +6,7 @@ int t1, t2, t3, vout;
 uint8_t dummy_load_current;
 int dummy_load_value;
 uint32_t debug_servo_value;
+uint8_t irq_count = 0, irq_flag = 0, irq_compare = 20;
 
 uint32_t vout_iir_coeff = 210;
 uint32_t vout_prev = 0, vout_current = 0;
@@ -55,26 +56,43 @@ void print_all()
   Serial.println(" ");
 }
 
+SIGNAL(TIMER0_COMPA_vect) 
+{
+  ++irq_count;
+  if(irq_count > irq_compare)
+  {
+    irq_count = 0;
+    irq_flag = 1;
+  }
+}
+
 void setup() 
 {
   Serial.begin(9600);
   //while (!Serial);
   pinMode(9, OUTPUT);
   servo.attach(6);
+
+  OCR0A = 0xAF;
+  TIMSK0 |= _BV(OCIE0A);
 }
 
 void loop() {
-  read_analog_in();
-
-  apply_vout_filter();
-
-  ++dummy_load_value;
-  if(dummy_load_value > 25500) dummy_load_value = 0;
+  if(irq_flag)
+  {
+    read_analog_in();
   
-  delay(10);
-
-  output_set(vout_get());
-  dummy_load_write();
-
-  print_all();
+    apply_vout_filter();
+  
+    ++dummy_load_value;
+    if(dummy_load_value > 25500) dummy_load_value = 0;
+    
+    delay(10);
+  
+    output_set(vout_get());
+    dummy_load_write();
+  
+    print_all();
+    irq_flag = 0;
+  }
 }
