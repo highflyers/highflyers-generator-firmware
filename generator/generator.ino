@@ -6,12 +6,22 @@ int t1, t2, t3, vout;
 uint8_t dummy_load_current;
 int dummy_load_value;
 uint32_t debug_servo_value;
-uint8_t irq_count = 0, irq_flag = 0, irq_compare = 20;
+uint8_t irq_count = 0, irq_flag = 0;
+uint8_t irq_compare = 20;   // <-- config loop frequency
 
-uint32_t vout_iir_coeff = 210;
+uint32_t vout_iir_coeff = 210;    // <-- config filter
 uint32_t vout_prev = 0, vout_current = 0;
+uint32_t output_minimum_value = 256;    // <-- config
+uint32_t output_startup_value = 512;    // <-- config
 
-int servo_dir = 1;
+uint8_t digital_in_starter, digital_in_enable;
+
+int current_state = 0;
+
+enum state_machine_states
+{
+  STATE_IDLE = 0, STATE_STARTING, STATE_POWERING_UP, STATE_RUNNING
+};
 
 void read_analog_in()
 {
@@ -19,6 +29,18 @@ void read_analog_in()
   t1 = analogRead(A1);
   t2 = analogRead(A2);
   t3 = analogRead(A3);
+}
+
+void digital_in_read()
+{
+  digital_in_starter = !digitalRead(15);
+  digital_in_enable = !digitalRead(4);
+}
+
+void digital_in_setup()
+{
+  pinMode(15, INPUT_PULLUP);
+  pinMode(4, INPUT_PULLUP);
 }
 
 void apply_vout_filter()
@@ -39,7 +61,7 @@ void output_set(uint32_t value)
   servo.write(debug_servo_value);
 }
 
-void dummy_load_write()
+void dummy_load_update()
 {
   uint8_t temp_value = dummy_load_value / 100;
   digitalWrite(9, dummy_load_current > temp_value/16 ? LOW : HIGH);
@@ -49,6 +71,8 @@ void dummy_load_write()
 
 void print_all()
 {
+  Serial.print(current_state);
+  Serial.print(" ");
   Serial.print(vout_get());
   Serial.print(" ");
   Serial.print(debug_servo_value);
@@ -73,26 +97,87 @@ void setup()
   pinMode(9, OUTPUT);
   servo.attach(6);
 
+  digital_in_setup();
+
   OCR0A = 0xAF;
   TIMSK0 |= _BV(OCIE0A);
+}
+
+void state_machine_update()
+{
+  if(digital_in_starter)
+    {
+      current_state = STATE_STARTING;
+    }
+    else
+    {
+      if(digital_in_enable)
+      {
+        if(current_state != STATE_RUNNING)
+        {
+          current_state = STATE_POWERING_UP;
+        }
+      }
+      else
+      {
+        current_state = STATE_IDLE;
+      }
+    }
+}
+
+void loop_idle()
+{
+  output_set(output_minimum_value);
+}
+
+void loop_starting()
+{
+  output_set(output_startup_value);
+}
+
+void loop_powering_up()
+{
+    ++dummy_load_value;
+    if(dummy_load_value > 25500) dummy_load_value = 0;
+    loop_running();
+}
+
+void loop_running()
+{
+    output_set(vout_get());
 }
 
 void loop() {
   if(irq_flag)
   {
-    read_analog_in();
-  
+    read_analog_in();  
+    digital_in_read();
     apply_vout_filter();
-  
-    ++dummy_load_value;
-    if(dummy_load_value > 25500) dummy_load_value = 0;
-    
-    delay(10);
-  
-    output_set(vout_get());
-    dummy_load_write();
-  
+    dummy_load_update();
+
+    state_machine_update();
+    switch(current_state)
+    {
+      case STATE_IDLE:
+        loop_idle();
+        break;
+      case STATE_STARTING:
+        loop_starting();
+        break;
+      case STATE_POWERING_UP:
+        loop_powering_up();
+        break;
+      case STATE_RUNNING:
+        loop_running();
+        break;
+      default:
+        loop_idle();
+        break;
+    }
+      
     print_all();
     irq_flag = 0;
   }
 }
+
+
