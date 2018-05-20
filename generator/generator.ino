@@ -16,6 +16,9 @@ uint32_t output_startup_value = 512;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
+uint32_t powering_up_delay = 250;    // <-- config
+uint32_t powering_up_counter = 0;
+
 int current_state = 0;
 
 enum state_machine_states
@@ -61,12 +64,9 @@ void output_set(uint32_t value)
   servo.write(debug_servo_value);
 }
 
-void dummy_load_update()
+void dummy_load_set(uint8_t value)
 {
-  uint8_t temp_value = dummy_load_value / 100;
-  digitalWrite(9, dummy_load_current > temp_value/16 ? LOW : HIGH);
-  ++dummy_load_current;
-  if(dummy_load_current > 15) dummy_load_current = 0;
+  digitalWrite(9, value);
 }
 
 void print_all()
@@ -76,6 +76,8 @@ void print_all()
   Serial.print(vout_get());
   Serial.print(" ");
   Serial.print(debug_servo_value);
+  Serial.print(" ");
+  Serial.print(powering_up_counter);
   Serial.print(" ");
   Serial.println(" ");
 }
@@ -115,6 +117,10 @@ void state_machine_update()
       {
         if(current_state != STATE_RUNNING)
         {
+          if(current_state != STATE_POWERING_UP)
+          {
+            powering_up_counter = 0;
+          }
           current_state = STATE_POWERING_UP;
         }
       }
@@ -127,24 +133,32 @@ void state_machine_update()
 
 void loop_idle()
 {
+  dummy_load_set(0);
   output_set(output_minimum_value);
 }
 
 void loop_starting()
 {
+  dummy_load_set(0);
   output_set(output_startup_value);
 }
 
 void loop_powering_up()
 {
-    ++dummy_load_value;
-    if(dummy_load_value > 25500) dummy_load_value = 0;
-    loop_running();
+  dummy_load_set(1);
+  ++powering_up_counter;
+  if(powering_up_counter >= powering_up_delay)
+  {
+    dummy_load_set(0);
+    current_state = STATE_RUNNING;
+  }
+  loop_running();
 }
 
 void loop_running()
 {
     output_set(vout_get());
+    // set Q and P_GOOD
 }
 
 void loop() {
@@ -153,7 +167,6 @@ void loop() {
     read_analog_in();  
     digital_in_read();
     apply_vout_filter();
-    dummy_load_update();
 
     state_machine_update();
     switch(current_state)
