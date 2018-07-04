@@ -1,4 +1,5 @@
 #include <Servo.h>
+#include "pid.h"
 
 Servo servo;
 
@@ -9,17 +10,22 @@ uint32_t debug_servo_value;
 uint8_t irq_count = 0, irq_flag = 0;
 uint8_t irq_compare = 20;   // <-- config loop frequency
 
-uint32_t vout_iir_coeff = 210;    // <-- config filter
-uint32_t vout_prev = 0, vout_current = 0;
+uint32_t vout_iir_coeff = 230;    // <-- config filter
+double vout_prev = 0, vout_current = 0;
 uint32_t output_minimum_value = 256;    // <-- config
 uint32_t output_startup_value = 512;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
 uint32_t powering_up_delay = 250;    // <-- config
+uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
+uint32_t setpoint = 24000;
+
 int current_state = 0;
+
+Pid pid(1, 100, 0);
 
 enum state_machine_states
 {
@@ -29,6 +35,7 @@ enum state_machine_states
 void read_analog_in()
 {
   vout = analogRead(A0);
+  vout *= 51;
   t1 = analogRead(A1);
   t2 = analogRead(A2);
   t3 = analogRead(A3);
@@ -48,8 +55,10 @@ void digital_in_setup()
 
 void apply_vout_filter()
 {
-  vout_current = (vout_prev * vout_iir_coeff) + (vout * (256 - vout_iir_coeff));
-  vout_current /= 256;
+  double vout_currentD = ((double)vout_prev * (double)vout_iir_coeff) + ((double)vout * (double)(256 - vout_iir_coeff));
+  vout_currentD /= 256.0;
+  vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
+  vout_current = vout_currentD;
   vout_prev = vout_current;
 }
 
@@ -71,28 +80,30 @@ void dummy_load_set(uint8_t value)
 
 void print_all()
 {
-  Serial.print(current_state);
+  //  Serial.print(current_state);
+  //  Serial.print(" ");
+  Serial.print(vout);
   Serial.print(" ");
   Serial.print(vout_get());
   Serial.print(" ");
-  Serial.print(debug_servo_value);
-  Serial.print(" ");
-  Serial.print(powering_up_counter);
-  Serial.print(" ");
+  //  Serial.print(debug_servo_value);
+  //  Serial.print(" ");
+  //  Serial.print(powering_up_counter);
+  //  Serial.print(" ");
   Serial.println(" ");
 }
 
-SIGNAL(TIMER0_COMPA_vect) 
+SIGNAL(TIMER0_COMPA_vect)
 {
   ++irq_count;
-  if(irq_count > irq_compare)
+  if (irq_count > irq_compare)
   {
     irq_count = 0;
     irq_flag = 1;
   }
 }
 
-void setup() 
+void setup()
 {
   Serial.begin(9600);
   //while (!Serial);
@@ -107,28 +118,28 @@ void setup()
 
 void state_machine_update()
 {
-  if(digital_in_starter)
+  if (digital_in_starter)
+  {
+    current_state = STATE_STARTING;
+  }
+  else
+  {
+    if (digital_in_enable)
     {
-      current_state = STATE_STARTING;
+      if (current_state != STATE_RUNNING)
+      {
+        if (current_state != STATE_POWERING_UP)
+        {
+          powering_up_counter = 0;
+        }
+        current_state = STATE_POWERING_UP;
+      }
     }
     else
     {
-      if(digital_in_enable)
-      {
-        if(current_state != STATE_RUNNING)
-        {
-          if(current_state != STATE_POWERING_UP)
-          {
-            powering_up_counter = 0;
-          }
-          current_state = STATE_POWERING_UP;
-        }
-      }
-      else
-      {
-        current_state = STATE_IDLE;
-      }
+      current_state = STATE_IDLE;
     }
+  }
 }
 
 void loop_idle()
@@ -147,7 +158,7 @@ void loop_powering_up()
 {
   dummy_load_set(1);
   ++powering_up_counter;
-  if(powering_up_counter >= powering_up_delay)
+  if (powering_up_counter >= powering_up_delay)
   {
     dummy_load_set(0);
     current_state = STATE_RUNNING;
@@ -157,20 +168,29 @@ void loop_powering_up()
 
 void loop_running()
 {
-    output_set(vout_get());
-    // set Q and P_GOOD
+  double e = ((double)setpoint - (double)vout_get()) / 1000.0;
+  double u = pid.loop(e);
+  u = u > 1000 ? 1000 : u;
+  u = u < output_minimum_value ? output_minimum_value : u;
+  uint32_t uU = u;
+  output_set(uU);
+  // set Q and P_GOOD
 }
 
 void loop() {
-  if(irq_flag)
+  if (irq_flag)
   {
-    read_analog_in();  
+    read_analog_in();
     digital_in_read();
     apply_vout_filter();
 
-    state_machine_update();
-    switch(current_state)
-    {
+    ////////////////
+    loop_running();
+    ////////////////**/
+
+    /*state_machine_update();
+      switch(current_state)
+      {
       case STATE_IDLE:
         loop_idle();
         break;
@@ -186,8 +206,8 @@ void loop() {
       default:
         loop_idle();
         break;
-    }
-      
+      }*/
+
     print_all();
     irq_flag = 0;
   }
