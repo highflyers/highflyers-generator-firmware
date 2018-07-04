@@ -1,17 +1,35 @@
 #include <Servo.h>
 #include "pid.h"
 
+class IIR 
+{
+public:
+  IIR(uint32_t coeff) { this->coeff = coeff; prevSample = 0; };
+  uint32_t newSample(uint32_t sample) {
+    double vout_currentD = (prevSample * coeff) + (sample * (256 - coeff));
+    vout_currentD /= 256.0;
+    vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
+    currentSample = vout_currentD;
+    prevSample = currentSample;
+    return currentSample;
+  }
+  uint32_t getValue() { return currentSample; }
+private:
+  uint32_t coeff;
+  uint32_t prevSample, currentSample;
+};
+
 Servo servo;
 
-int t1, t2, t3, vout;
+int vout;
 uint8_t dummy_load_current;
 int dummy_load_value;
 uint32_t debug_servo_value;
 uint8_t irq_count = 0, irq_flag = 0;
 uint8_t irq_compare = 20;   // <-- config loop frequency
 
-uint32_t vout_iir_coeff = 240;    // <-- config filter
-uint32_t vout_prev = 0, vout_current = 0;
+//uint32_t vout_iir_coeff = 240;    // <-- config filter
+//uint32_t vout_prev = 0, vout_current = 0;
 uint32_t output_minimum_value = 256;    // <-- config
 uint32_t output_startup_value = 512;    // <-- config
 
@@ -26,6 +44,8 @@ uint32_t setpoint = 24000;
 int current_state = 0;
 
 Pid pid(1, 3.33, 0);
+IIR voutIir(240);
+IIR t1iir(250), t2iir(250), t3iir(250);
 
 enum state_machine_states
 {
@@ -37,9 +57,9 @@ void read_analog_in()
   vout = analogRead(A0);
   vout = vout > 600 ? 600 : vout;
   vout *= 51;
-  t1 = analogRead(A1);
-  t2 = analogRead(A2);
-  t3 = analogRead(A3);
+  t1iir.newSample(analogRead(A1));
+  t2iir.newSample(analogRead(A2));
+  t3iir.newSample(analogRead(A3));
 }
 
 void digital_in_read()
@@ -56,16 +76,12 @@ void digital_in_setup()
 
 void apply_vout_filter()
 {
-  double vout_currentD = (vout_prev * vout_iir_coeff) + (vout * (256 - vout_iir_coeff));
-  vout_currentD /= 256.0;
-  vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
-  vout_current = vout_currentD;
-  vout_prev = vout_current;
+  voutIir.newSample(vout);
 }
 
 uint32_t vout_get()
 {
-  return vout_current;
+  return voutIir.getValue();
 }
 
 void output_set(uint32_t value)
@@ -83,14 +99,22 @@ void print_all()
 {
   //  Serial.print(current_state);
   //  Serial.print(" ");
-//  Serial.print(vout);
-//  Serial.print(" ");
-  Serial.print(vout_get()/30);
-  Serial.print(" ");
+//    Serial.print(vout);
+//    Serial.print(" ");
+    Serial.print(vout_get()/30);
+    Serial.print(" ");
     Serial.print(debug_servo_value);
     Serial.print(" ");
-    Serial.print(powering_up_counter);
+//    Serial.print(powering_up_counter);
+//    Serial.print(" ");
+
+    Serial.print(t1iir.getValue());
     Serial.print(" ");
+    Serial.print(t2iir.getValue());
+    Serial.print(" ");
+    Serial.print(t3iir.getValue());
+    Serial.print(" ");
+
   Serial.println(" ");
 }
 
