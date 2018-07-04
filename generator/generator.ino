@@ -10,8 +10,8 @@ uint32_t debug_servo_value;
 uint8_t irq_count = 0, irq_flag = 0;
 uint8_t irq_compare = 20;   // <-- config loop frequency
 
-uint32_t vout_iir_coeff = 230;    // <-- config filter
-double vout_prev = 0, vout_current = 0;
+uint32_t vout_iir_coeff = 240;    // <-- config filter
+uint32_t vout_prev = 0, vout_current = 0;
 uint32_t output_minimum_value = 256;    // <-- config
 uint32_t output_startup_value = 512;    // <-- config
 
@@ -25,7 +25,7 @@ uint32_t setpoint = 24000;
 
 int current_state = 0;
 
-Pid pid(1, 100, 0);
+Pid pid(1, 3.33, 0);
 
 enum state_machine_states
 {
@@ -35,6 +35,7 @@ enum state_machine_states
 void read_analog_in()
 {
   vout = analogRead(A0);
+  vout = vout > 600 ? 600 : vout;
   vout *= 51;
   t1 = analogRead(A1);
   t2 = analogRead(A2);
@@ -55,7 +56,7 @@ void digital_in_setup()
 
 void apply_vout_filter()
 {
-  double vout_currentD = ((double)vout_prev * (double)vout_iir_coeff) + ((double)vout * (double)(256 - vout_iir_coeff));
+  double vout_currentD = (vout_prev * vout_iir_coeff) + (vout * (256 - vout_iir_coeff));
   vout_currentD /= 256.0;
   vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
   vout_current = vout_currentD;
@@ -82,14 +83,14 @@ void print_all()
 {
   //  Serial.print(current_state);
   //  Serial.print(" ");
-  Serial.print(vout);
+//  Serial.print(vout);
+//  Serial.print(" ");
+  Serial.print(vout_get()/30);
   Serial.print(" ");
-  Serial.print(vout_get());
-  Serial.print(" ");
-  //  Serial.print(debug_servo_value);
-  //  Serial.print(" ");
-  //  Serial.print(powering_up_counter);
-  //  Serial.print(" ");
+    Serial.print(debug_servo_value);
+    Serial.print(" ");
+    Serial.print(powering_up_counter);
+    Serial.print(" ");
   Serial.println(" ");
 }
 
@@ -184,11 +185,7 @@ void loop() {
     digital_in_read();
     apply_vout_filter();
 
-    ////////////////
-    loop_running();
-    ////////////////**/
-
-    /*state_machine_update();
+    state_machine_update();
       switch(current_state)
       {
       case STATE_IDLE:
@@ -206,7 +203,7 @@ void loop() {
       default:
         loop_idle();
         break;
-      }*/
+      }
 
     print_all();
     irq_flag = 0;

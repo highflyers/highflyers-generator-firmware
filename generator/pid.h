@@ -17,11 +17,6 @@ public:
 		aggE = aggE < 0 ? 0 : aggE;
 		ret = pP * (e + pI * aggE);
 
-		Serial.print(e);
-		Serial.print(" ");
-		Serial.print(ret);
-		Serial.print(" ");
-
 		return ret;
 	}
 
