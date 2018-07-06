@@ -1,23 +1,7 @@
 #include <Servo.h>
 #include "pid.h"
-
-class IIR 
-{
-public:
-  IIR(uint32_t coeff) { this->coeff = coeff; prevSample = 0; };
-  uint32_t newSample(uint32_t sample) {
-    double vout_currentD = (prevSample * coeff) + (sample * (256 - coeff));
-    vout_currentD /= 256.0;
-    vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
-    currentSample = vout_currentD;
-    prevSample = currentSample;
-    return currentSample;
-  }
-  uint32_t getValue() { return currentSample; }
-private:
-  uint32_t coeff;
-  uint32_t prevSample, currentSample;
-};
+#include "iir.h"
+#include "thermistor.h"
 
 Servo servo;
 
@@ -46,6 +30,9 @@ int current_state = 0;
 Pid pid(1, 3.33, 0);
 IIR voutIir(240);
 IIR t1iir(120), t2iir(120), t3iir(120);
+Thermistor therm1(11, 10, 1.0);
+Thermistor therm2(9.52, 10, 1.0);
+Thermistor therm3(10.34, 10, 1.0);
 
 enum state_machine_states
 {
@@ -57,9 +44,9 @@ void read_analog_in()
   vout = analogRead(A0);
   vout = vout > 600 ? 600 : vout;
   vout *= 51;
-  t1iir.newSample(analogRead(A1));
-  t2iir.newSample(analogRead(A2));
-  t3iir.newSample(analogRead(A3));
+  //t1iir.newSample(therm1.calculate(analogRead(A1)));
+  t2iir.newSample(therm2.calculate(analogRead(A2)));
+  t3iir.newSample(therm3.calculate(analogRead(A3)));
 }
 
 void digital_in_read()
@@ -101,15 +88,16 @@ void print_all()
   //  Serial.print(" ");
 //    Serial.print(vout);
 //    Serial.print(" ");
-    Serial.print(vout_get()/30);
-    Serial.print(" ");
-    Serial.print(debug_servo_value);
-    Serial.print(" ");
+//    Serial.print(vout_get()/30);
+//    Serial.print(" ");
+//    Serial.print(debug_servo_value);
+//    Serial.print(" ");
 //    Serial.print(powering_up_counter);
 //    Serial.print(" ");
 
-    Serial.print(t1iir.getValue());
-    Serial.print(" ");
+//    Serial.print(t1iir.getValue());
+//    Serial.print(" ");
+
     Serial.print(t2iir.getValue());
     Serial.print(" ");
     Serial.print(t3iir.getValue());
