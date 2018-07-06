@@ -45,7 +45,7 @@ int current_state = 0;
 
 Pid pid(1, 3.33, 0);
 IIR voutIir(240);
-IIR t1iir(250), t2iir(250), t3iir(250);
+IIR t1iir(120), t2iir(120), t3iir(120);
 
 enum state_machine_states
 {
