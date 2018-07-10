@@ -13,12 +13,6 @@ public:
     double I = (refV - voltage) / reference;
     double resistance = (refV / I) - reference;
     double rDiffRel = -(resistance - nominal) / nominal;
-//    Serial.print(resistance);
-//    Serial.print(" ");
-//    Serial.print(nominal);
-//    Serial.print(" ");
-    Serial.print(rDiffRel*1000);
-    Serial.print(" ");
     return rDiffRel*1000;
   }
 private:
