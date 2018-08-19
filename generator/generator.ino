@@ -30,10 +30,9 @@ int current_state = 0;
 
 Pid pid(0.75, 1, 1, output_minimum_value, 1000);
 IIR voutIir(240);
-IIR t1iir(120), t2iir(120), t3iir(120);
+IIR t1iir(120), t2iir(120);
 Thermistor therm1(11, 10, 1.0);
 Thermistor therm2(9.52, 10, 1.0);
-Thermistor therm3(10.34, 10, 1.0);
 
 enum state_machine_states
 {
@@ -45,9 +44,8 @@ void read_analog_in()
   vout = analogRead(A0);
   vout = vout > 600 ? 600 : vout;
   vout *= 51;
-  t1iir.newSample(therm1.calculate(analogRead(A1)));
+  t1iir.newSample(therm1.calculate(analogRead(A3)));
   t2iir.newSample(therm2.calculate(analogRead(A2)));
-  t3iir.newSample(therm3.calculate(analogRead(A3)));
 }
 
 void digital_in_read()
@@ -102,8 +100,6 @@ void print_all()
 //    Serial.print(" ");
 
     Serial.print(t2iir.getValue());
-    Serial.print(" ");
-    Serial.print(t3iir.getValue());
     Serial.print(" ");
 
   Serial.println(" ");
