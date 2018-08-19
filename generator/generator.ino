@@ -1,19 +1,22 @@
 #include <Servo.h>
 #include "pid.h"
+#include "iir.h"
+#include "thermistor.h"
 
 Servo servo;
 
-int t1, t2, t3, vout;
+int vout;
 uint8_t dummy_load_current;
 int dummy_load_value;
 uint32_t debug_servo_value;
 uint8_t irq_count = 0, irq_flag = 0;
 uint8_t irq_compare = 20;   // <-- config loop frequency
 
-uint32_t vout_iir_coeff = 240;    // <-- config filter
-uint32_t vout_prev = 0, vout_current = 0;
-uint32_t output_minimum_value = 256;    // <-- config
-uint32_t output_startup_value = 512;    // <-- config
+//uint32_t vout_iir_coeff = 240;    // <-- config filter
+//uint32_t vout_prev = 0, vout_current = 0;
+uint32_t output_minimum_value = 560;    // <-- config
+uint32_t output_idle_value = 0;
+uint32_t output_startup_value = 256;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
@@ -21,11 +24,16 @@ uint32_t powering_up_delay = 250;    // <-- config
 uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
-uint32_t setpoint = 24000;
+uint32_t setpoint = 100*30;
 
 int current_state = 0;
 
-Pid pid(1, 3.33, 0);
+Pid pid(0.75, 1, 1, output_minimum_value, 1000);
+IIR voutIir(240);
+IIR t1iir(120), t2iir(120), t3iir(120);
+Thermistor therm1(11, 10, 1.0);
+Thermistor therm2(9.52, 10, 1.0);
+Thermistor therm3(10.34, 10, 1.0);
 
 enum state_machine_states
 {
@@ -37,9 +45,9 @@ void read_analog_in()
   vout = analogRead(A0);
   vout = vout > 600 ? 600 : vout;
   vout *= 51;
-  t1 = analogRead(A1);
-  t2 = analogRead(A2);
-  t3 = analogRead(A3);
+  t1iir.newSample(therm1.calculate(analogRead(A1)));
+  t2iir.newSample(therm2.calculate(analogRead(A2)));
+  t3iir.newSample(therm3.calculate(analogRead(A3)));
 }
 
 void digital_in_read()
@@ -56,16 +64,12 @@ void digital_in_setup()
 
 void apply_vout_filter()
 {
-  double vout_currentD = (vout_prev * vout_iir_coeff) + (vout * (256 - vout_iir_coeff));
-  vout_currentD /= 256.0;
-  vout_currentD = vout_currentD < 0 ? 0 : vout_currentD;
-  vout_current = vout_currentD;
-  vout_prev = vout_current;
+  voutIir.newSample(vout);
 }
 
 uint32_t vout_get()
 {
-  return vout_current;
+  return voutIir.getValue();
 }
 
 void output_set(uint32_t value)
@@ -81,16 +85,27 @@ void dummy_load_set(uint8_t value)
 
 void print_all()
 {
-  //  Serial.print(current_state);
-  //  Serial.print(" ");
-//  Serial.print(vout);
-//  Serial.print(" ");
-  Serial.print(vout_get()/30);
-  Serial.print(" ");
+//    Serial.print(current_state);
+//    Serial.print(" ");
+//    Serial.print(vout);
+//    Serial.print(" ");
+    Serial.print(vout_get()/30);
+    Serial.print(" ");
     Serial.print(debug_servo_value);
     Serial.print(" ");
-    Serial.print(powering_up_counter);
+//    Serial.print(powering_up_counter);
+//    Serial.print(" ");
+    Serial.print(pid.aggE);
     Serial.print(" ");
+
+//    Serial.print(t1iir.getValue());
+//    Serial.print(" ");
+
+    Serial.print(t2iir.getValue());
+    Serial.print(" ");
+    Serial.print(t3iir.getValue());
+    Serial.print(" ");
+
   Serial.println(" ");
 }
 
@@ -146,7 +161,8 @@ void state_machine_update()
 void loop_idle()
 {
   dummy_load_set(0);
-  output_set(output_minimum_value);
+  pid.reset();
+  output_set(output_idle_value);
 }
 
 void loop_starting()

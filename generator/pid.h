@@ -1,11 +1,13 @@
 class Pid
 {
 public:
-	Pid(double p, double i, double d)
+	Pid(double p, double i, double d, double minU, double maxU)
 	{
 		pP = p;
 		pI = i;
 		pD = d;
+    uMin = minU;
+    uMax = maxU;
 		aggE = 0.0;
 	};
 
@@ -13,14 +15,19 @@ public:
 	{
 		double ret = 0.0;
 		aggE += e;
-		aggE = aggE > 1000.0/pI ? 1000.0/pI : aggE;
-		aggE = aggE < 0 ? 0 : aggE;
+    aggE = aggE > uMax/pI ? uMax/pI : aggE;
+    aggE = aggE < uMin/pI ? uMin/pI : aggE;
 		ret = pP * (e + pI * aggE);
 
 		return ret;
 	}
 
-private:
-	double pP, pI, pD;
+ void reset()
+ {
+  aggE = 0.0;
+ }
+
+public:
+	double pP, pI, pD, uMin, uMax;
 	double aggE;
 };
