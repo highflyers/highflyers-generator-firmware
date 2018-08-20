@@ -4,6 +4,13 @@
 #include "thermistor.h"
 
 Servo servo;
+Servo servo_esc;
+uint32_t servo_esc_startup_value = 100;
+uint32_t servo_esc_idle_value = 25;
+uint32_t servo_esc_delay_max = 350;
+uint32_t servo_esc_delay;
+uint32_t servo_esc_pulse_delay_max = 25;
+uint32_t servo_esc_pulse_delay;
 
 int vout;
 uint8_t dummy_load_current;
@@ -14,8 +21,8 @@ uint8_t irq_compare = 20;   // <-- config loop frequency
 
 //uint32_t vout_iir_coeff = 240;    // <-- config filter
 //uint32_t vout_prev = 0, vout_current = 0;
-uint32_t output_minimum_value = 560;    // <-- config
-uint32_t output_idle_value = 0;
+uint32_t output_minimum_value = 256;    // <-- config
+uint32_t output_idle_value = 256;
 uint32_t output_startup_value = 256;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
@@ -24,7 +31,7 @@ uint32_t powering_up_delay = 250;    // <-- config
 uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
-uint32_t setpoint = 100*30;
+uint32_t setpoint = 10000;
 
 int current_state = 0;
 
@@ -51,13 +58,25 @@ void read_analog_in()
 void digital_in_read()
 {
   digital_in_starter = !digitalRead(15);
-  digital_in_enable = !digitalRead(4);
+  digital_in_enable = !digitalRead(4); 
+}
+
+void relay_set(uint8_t value)
+{
+  digitalWrite(8, value);
+}
+
+void esc_enable(uint8_t value)
+{
+  digitalWrite(3, !value);
 }
 
 void digital_in_setup()
 {
   pinMode(15, INPUT_PULLUP);
   pinMode(4, INPUT_PULLUP);
+  pinMode(8, OUTPUT);
+  pinMode(3, OUTPUT);
 }
 
 void apply_vout_filter()
@@ -78,29 +97,26 @@ void output_set(uint32_t value)
 
 void dummy_load_set(uint8_t value)
 {
-  digitalWrite(9, value);
+  digitalWrite(7, value);
 }
 
 void print_all()
 {
 //    Serial.print(current_state);
 //    Serial.print(" ");
-//    Serial.print(vout);
+//    Serial.print(vout_get()/30.0);
 //    Serial.print(" ");
-    Serial.print(vout_get()/30);
-    Serial.print(" ");
-    Serial.print(debug_servo_value);
-    Serial.print(" ");
-//    Serial.print(powering_up_counter);
+//    Serial.print(debug_servo_value);
 //    Serial.print(" ");
-    Serial.print(pid.aggE);
-    Serial.print(" ");
-
+//    Serial.print(pid.aggE);
+//    Serial.print(" ");
+//
 //    Serial.print(t1iir.getValue());
 //    Serial.print(" ");
+//    Serial.print(t2iir.getValue());
+//    Serial.print(" ");
 
-    Serial.print(t2iir.getValue());
-    Serial.print(" ");
+  Serial.print(servo_esc_delay);
 
   Serial.println(" ");
 }
@@ -121,6 +137,7 @@ void setup()
   //while (!Serial);
   pinMode(9, OUTPUT);
   servo.attach(6);
+  servo_esc.attach(10);
 
   digital_in_setup();
 
@@ -130,8 +147,14 @@ void setup()
 
 void state_machine_update()
 {
+  digitalWrite(8,1);
   if (digital_in_starter)
   {
+    if(current_state != STATE_STARTING)
+    {
+      servo_esc_delay = servo_esc_delay_max;
+      servo_esc_pulse_delay = servo_esc_pulse_delay_max;
+    }
     current_state = STATE_STARTING;
   }
   else
@@ -159,12 +182,34 @@ void loop_idle()
   dummy_load_set(0);
   pid.reset();
   output_set(output_idle_value);
+  relay_set(0);
+  esc_enable(0);
+  servo_esc.write(servo_esc_idle_value);
 }
 
 void loop_starting()
 {
   dummy_load_set(0);
   output_set(output_startup_value);
+  esc_enable(1);
+  if(servo_esc_delay > 0)
+  {
+    --servo_esc_delay;
+    servo_esc.write(servo_esc_idle_value);
+  }
+  else
+  {
+    servo_esc_delay = 0;
+    if(servo_esc_pulse_delay > 0)
+    {
+      --servo_esc_pulse_delay;
+      servo_esc.write(servo_esc_startup_value);
+    }
+    else
+    {
+      servo_esc.write(servo_esc_idle_value);      
+    }
+  }
 }
 
 void loop_powering_up()
@@ -177,6 +222,8 @@ void loop_powering_up()
     current_state = STATE_RUNNING;
   }
   loop_running();
+  esc_enable(0);
+  servo_esc.write(servo_esc_idle_value);
 }
 
 void loop_running()
@@ -187,6 +234,9 @@ void loop_running()
   u = u < output_minimum_value ? output_minimum_value : u;
   uint32_t uU = u;
   output_set(uU);
+  relay_set(1);
+  esc_enable(0);
+  servo_esc.write(servo_esc_idle_value);
   // set Q and P_GOOD
 }
 
