@@ -3,14 +3,21 @@
 #include "iir.h"
 #include "thermistor.h"
 
+#define RELAY_POS_RECTIFIER   0
+#define RELAY_POS_ESC         1
+
 Servo servo;
 Servo servo_esc;
+Servo servo_suction;
 uint32_t servo_esc_startup_value = 100;
 uint32_t servo_esc_idle_value = 25;
 uint32_t servo_esc_delay_max = 350;
 uint32_t servo_esc_delay;
+uint32_t servo_esc_pulse_suction_max = 10;
 uint32_t servo_esc_pulse_delay_max = 25;
 uint32_t servo_esc_pulse_delay;
+uint32_t servo_suction_active_vaule = 180;
+uint32_t servo_suction_inactive_value = 10;
 
 int vout;
 uint8_t dummy_load_current;
@@ -32,6 +39,9 @@ uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
 uint32_t setpoint = 10000;
+uint32_t motor_dead_threshold = 100;
+uint32_t motor_dead_count = 0;
+uint32_t motor_dead_count_max = 100;
 
 int current_state = 0;
 
@@ -43,7 +53,7 @@ Thermistor therm2(9.52, 10, 1.0);
 
 enum state_machine_states
 {
-  STATE_IDLE = 0, STATE_STARTING, STATE_POWERING_UP, STATE_RUNNING
+  STATE_IDLE = 0, STATE_STARTING, STATE_POWERING_UP, STATE_RUNNING, STATE_RE_IGNITION
 };
 
 void read_analog_in()
@@ -102,10 +112,10 @@ void dummy_load_set(uint8_t value)
 
 void print_all()
 {
-//    Serial.print(current_state);
-//    Serial.print(" ");
-//    Serial.print(vout_get()/30.0);
-//    Serial.print(" ");
+    Serial.print(current_state);
+    Serial.print(" ");
+    Serial.print(vout_get());
+    Serial.print(" ");
 //    Serial.print(debug_servo_value);
 //    Serial.print(" ");
 //    Serial.print(pid.aggE);
@@ -116,7 +126,9 @@ void print_all()
 //    Serial.print(t2iir.getValue());
 //    Serial.print(" ");
 
-  Serial.print(servo_esc_delay);
+//  Serial.print(servo_esc_delay);
+
+  Serial.print(motor_dead_count);
 
   Serial.println(" ");
 }
@@ -138,6 +150,7 @@ void setup()
   pinMode(9, OUTPUT);
   servo.attach(6);
   servo_esc.attach(10);
+  servo_suction.attach(9);
 
   digital_in_setup();
 
@@ -160,19 +173,25 @@ void state_machine_update()
   else
   {
     if (digital_in_enable)
-    {
-      if (current_state != STATE_RUNNING)
+    {  
+      if (current_state != STATE_RE_IGNITION)
       {
-        if (current_state != STATE_POWERING_UP)
+        if (current_state != STATE_RUNNING)
         {
-          powering_up_counter = 0;
+          if (current_state != STATE_POWERING_UP)
+          {
+            powering_up_counter = 0;
+          }
+          current_state = STATE_POWERING_UP;
         }
-        current_state = STATE_POWERING_UP;
       }
     }
     else
     {
-      current_state = STATE_IDLE;
+      if (current_state != STATE_RE_IGNITION)
+      {
+        current_state = STATE_IDLE;       
+      }
     }
   }
 }
@@ -182,16 +201,33 @@ void loop_idle()
   dummy_load_set(0);
   pid.reset();
   output_set(output_idle_value);
-  relay_set(0);
+  relay_set(RELAY_POS_RECTIFIER);
   esc_enable(0);
   servo_esc.write(servo_esc_idle_value);
+  
+  if(vout_get() < motor_dead_threshold)
+  {
+    ++motor_dead_count;
+    if(motor_dead_count > motor_dead_count_max)
+    {
+      servo_esc_delay = servo_esc_delay_max;
+      servo_esc_pulse_delay = servo_esc_pulse_delay_max;
+      current_state = STATE_RE_IGNITION;
+    }
+  }
+  else
+  {
+    motor_dead_count = 0;
+  }
 }
 
 void loop_starting()
 {
   dummy_load_set(0);
+  relay_set(RELAY_POS_ESC);
   output_set(output_startup_value);
   esc_enable(1);
+  motor_dead_count = 0;
   if(servo_esc_delay > 0)
   {
     --servo_esc_delay;
@@ -204,10 +240,12 @@ void loop_starting()
     {
       --servo_esc_pulse_delay;
       servo_esc.write(servo_esc_startup_value);
+      servo_suction.write(servo_esc_pulse_delay < servo_esc_pulse_suction_max ? servo_suction_active_vaule : servo_suction_inactive_value);
     }
     else
     {
-      servo_esc.write(servo_esc_idle_value);      
+      servo_esc.write(servo_esc_idle_value);
+      current_state = STATE_POWERING_UP;
     }
   }
 }
@@ -222,8 +260,6 @@ void loop_powering_up()
     current_state = STATE_RUNNING;
   }
   loop_running();
-  esc_enable(0);
-  servo_esc.write(servo_esc_idle_value);
 }
 
 void loop_running()
@@ -234,10 +270,30 @@ void loop_running()
   u = u < output_minimum_value ? output_minimum_value : u;
   uint32_t uU = u;
   output_set(uU);
-  relay_set(1);
+  relay_set(RELAY_POS_RECTIFIER);
   esc_enable(0);
   servo_esc.write(servo_esc_idle_value);
+
+  if(vout_get() < motor_dead_threshold)
+  {
+    ++motor_dead_count;
+    if(motor_dead_count > motor_dead_count_max)
+    {
+      servo_esc_delay = servo_esc_delay_max;
+      servo_esc_pulse_delay = servo_esc_pulse_delay_max;
+      current_state = STATE_RE_IGNITION;
+    }
+  }
+  else
+  {
+    motor_dead_count = 0;
+  }
   // set Q and P_GOOD
+}
+
+void loop_re_ignition()
+{
+  loop_starting();
 }
 
 void loop() {
@@ -261,6 +317,9 @@ void loop() {
         break;
       case STATE_RUNNING:
         loop_running();
+        break;
+      case STATE_RE_IGNITION:
+        loop_re_ignition();
         break;
       default:
         loop_idle();
