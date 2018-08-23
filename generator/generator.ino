@@ -13,11 +13,11 @@ uint32_t servo_esc_startup_value = 100;
 uint32_t servo_esc_idle_value = 25;
 uint32_t servo_esc_delay_max = 350;
 uint32_t servo_esc_delay;
-uint32_t servo_esc_pulse_suction_max = 10;
-uint32_t servo_esc_pulse_delay_max = 25;
+uint32_t servo_esc_pulse_suction_max = 5;
+uint32_t servo_esc_pulse_delay_max = 40;
 uint32_t servo_esc_pulse_delay;
-uint32_t servo_suction_active_vaule = 180;
-uint32_t servo_suction_inactive_value = 10;
+uint32_t servo_suction_active_vaule = 93;
+uint32_t servo_suction_inactive_value = 35;
 
 int vout;
 uint8_t dummy_load_current;
@@ -28,9 +28,10 @@ uint8_t irq_compare = 20;   // <-- config loop frequency
 
 //uint32_t vout_iir_coeff = 240;    // <-- config filter
 //uint32_t vout_prev = 0, vout_current = 0;
-uint32_t output_minimum_value = 256;    // <-- config
-uint32_t output_idle_value = 256;
-uint32_t output_startup_value = 256;    // <-- config
+uint32_t output_minimum_value = 230;    // <-- config
+uint32_t output_maximum_value = 470;    // <-- config
+uint32_t output_idle_value = 217;
+uint32_t output_startup_value = 280;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
@@ -101,6 +102,8 @@ uint32_t vout_get()
 
 void output_set(uint32_t value)
 {
+  value = value < output_minimum_value ? output_minimum_value : value;
+  value = value > output_maximum_value ? output_maximum_value : value;
   debug_servo_value = (value * 180) / 1024;
   servo.write(debug_servo_value);
 }
@@ -225,17 +228,18 @@ void loop_starting()
 {
   dummy_load_set(0);
   relay_set(RELAY_POS_ESC);
-  output_set(output_startup_value);
   esc_enable(1);
   motor_dead_count = 0;
   if(servo_esc_delay > 0)
   {
     --servo_esc_delay;
     servo_esc.write(servo_esc_idle_value);
+    output_set(output_minimum_value);
   }
   else
   {
     servo_esc_delay = 0;
+    output_set(output_startup_value);
     if(servo_esc_pulse_delay > 0)
     {
       --servo_esc_pulse_delay;
