@@ -16,7 +16,7 @@ uint32_t servo_esc_delay;
 uint32_t servo_esc_pulse_suction_max = 5;
 uint32_t servo_esc_pulse_delay_max = 40;
 uint32_t servo_esc_pulse_delay;
-uint32_t servo_suction_active_vaule = 93;
+uint32_t servo_suction_active_vaule = 0;
 uint32_t servo_suction_inactive_value = 35;
 
 int vout;
@@ -29,9 +29,11 @@ uint8_t irq_compare = 20;   // <-- config loop frequency
 //uint32_t vout_iir_coeff = 240;    // <-- config filter
 //uint32_t vout_prev = 0, vout_current = 0;
 uint32_t output_minimum_value = 230;    // <-- config
-uint32_t output_maximum_value = 470;    // <-- config
+//uint32_t output_maximum_value = 470;    // <-- config
+uint32_t output_maximum_value = 300;    // <-- config
+
 uint32_t output_idle_value = 217;
-uint32_t output_startup_value = 280;    // <-- config
+uint32_t output_startup_value = 250;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
@@ -39,14 +41,14 @@ uint32_t powering_up_delay = 250;    // <-- config
 uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
-uint32_t setpoint = 10000;
+uint32_t setpoint = 15000;
 uint32_t motor_dead_threshold = 100;
 uint32_t motor_dead_count = 0;
 uint32_t motor_dead_count_max = 100;
 
 int current_state = 0;
 
-Pid pid(0.75, 1, 1, output_minimum_value, 1000);
+Pid pid(0.5, 2, 1, output_minimum_value, 1000);
 IIR voutIir(240);
 IIR t1iir(120), t2iir(120);
 Thermistor therm1(11, 10, 1.0);
@@ -119,8 +121,8 @@ void print_all()
     Serial.print(" ");
     Serial.print(vout_get());
     Serial.print(" ");
-//    Serial.print(debug_servo_value);
-//    Serial.print(" ");
+    Serial.print(debug_servo_value);
+    Serial.print(" ");
 //    Serial.print(pid.aggE);
 //    Serial.print(" ");
 //
@@ -164,37 +166,25 @@ void setup()
 void state_machine_update()
 {
   digitalWrite(8,1);
-  if (digital_in_starter)
-  {
-    if(current_state != STATE_STARTING)
+  if (digital_in_enable)
+  {  
+    if (current_state != STATE_RE_IGNITION)
     {
-      servo_esc_delay = servo_esc_delay_max;
-      servo_esc_pulse_delay = servo_esc_pulse_delay_max;
+      if (current_state != STATE_RUNNING)
+      {
+        if (current_state != STATE_POWERING_UP)
+        {
+          powering_up_counter = 0;
+        }
+        current_state = STATE_POWERING_UP;
+      }
     }
-    current_state = STATE_STARTING;
   }
   else
   {
-    if (digital_in_enable)
-    {  
-      if (current_state != STATE_RE_IGNITION)
-      {
-        if (current_state != STATE_RUNNING)
-        {
-          if (current_state != STATE_POWERING_UP)
-          {
-            powering_up_counter = 0;
-          }
-          current_state = STATE_POWERING_UP;
-        }
-      }
-    }
-    else
+    if (current_state != STATE_RE_IGNITION)
     {
-      if (current_state != STATE_RE_IGNITION)
-      {
-        current_state = STATE_IDLE;       
-      }
+      current_state = STATE_IDLE;       
     }
   }
 }
@@ -244,7 +234,6 @@ void loop_starting()
     {
       --servo_esc_pulse_delay;
       servo_esc.write(servo_esc_startup_value);
-      servo_suction.write(servo_esc_pulse_delay < servo_esc_pulse_suction_max ? servo_suction_active_vaule : servo_suction_inactive_value);
     }
     else
     {
@@ -306,6 +295,16 @@ void loop() {
     read_analog_in();
     digital_in_read();
     apply_vout_filter();
+
+    
+    if (digital_in_starter)
+    {
+      servo_suction.write(servo_suction_active_vaule);
+    }
+    else
+    {
+      servo_suction.write(servo_suction_inactive_value);
+    }
 
     state_machine_update();
       switch(current_state)
