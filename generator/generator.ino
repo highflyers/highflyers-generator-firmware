@@ -11,13 +11,13 @@ Servo servo_esc;
 Servo servo_suction;
 uint32_t servo_esc_startup_value = 100;
 uint32_t servo_esc_idle_value = 25;
-uint32_t servo_esc_delay_max = 350;
+uint32_t servo_esc_delay_max = 200;
 uint32_t servo_esc_delay;
 uint32_t servo_esc_pulse_suction_max = 5;
 uint32_t servo_esc_pulse_delay_max = 40;
 uint32_t servo_esc_pulse_delay;
-uint32_t servo_suction_active_vaule = 0;
-uint32_t servo_suction_inactive_value = 35;
+uint32_t servo_suction_active_vaule = 4;
+uint32_t servo_suction_inactive_value = 36;
 
 int vout;
 uint8_t dummy_load_current;
@@ -28,12 +28,12 @@ uint8_t irq_compare = 20;   // <-- config loop frequency
 
 //uint32_t vout_iir_coeff = 240;    // <-- config filter
 //uint32_t vout_prev = 0, vout_current = 0;
-uint32_t output_minimum_value = 230;    // <-- config
+uint32_t output_minimum_value = 260;    // <-- config
 //uint32_t output_maximum_value = 470;    // <-- config
-uint32_t output_maximum_value = 300;    // <-- config
+uint32_t output_maximum_value = 350;    // <-- config
 
 uint32_t output_idle_value = 217;
-uint32_t output_startup_value = 250;    // <-- config
+uint32_t output_startup_value = 310;    // <-- config
 
 uint8_t digital_in_starter, digital_in_enable;
 
@@ -41,16 +41,17 @@ uint32_t powering_up_delay = 250;    // <-- config
 uint32_t vout_scale_factor = 51;    // <-- config
 uint32_t powering_up_counter = 0;
 
-uint32_t setpoint = 15000;
-uint32_t motor_dead_threshold = 100;
+uint32_t setpoint = 12600;
+uint32_t motor_dead_threshold = 50;
 uint32_t motor_dead_count = 0;
 uint32_t motor_dead_count_max = 100;
 
 int current_state = 0;
 
-Pid pid(0.5, 2, 1, output_minimum_value, 1000);
-IIR voutIir(240);
+Pid pid(1, 0.1, 1, output_minimum_value, 50);
+IIR voutIir(250);
 IIR t1iir(120), t2iir(120);
+IIR m_v(120), m_a(120), o_v(120), o_a(120);
 Thermistor therm1(11, 10, 1.0);
 Thermistor therm2(9.52, 10, 1.0);
 
@@ -61,35 +62,37 @@ enum state_machine_states
 
 void read_analog_in()
 {
-  vout = analogRead(A0);
+  vout = analogRead(A7);
   vout = vout > 600 ? 600 : vout;
   vout *= 51;
-  t1iir.newSample(therm1.calculate(analogRead(A3)));
-  t2iir.newSample(therm2.calculate(analogRead(A2)));
+
+  m_v.newSample(analogRead(A0));
+  m_a.newSample(analogRead(A1));
+  o_v.newSample(analogRead(A3));
+  o_a.newSample(analogRead(A2));
+  
+  t1iir.newSample(therm1.calculate(analogRead(A6)));
+  t2iir.newSample(therm2.calculate(analogRead(A8)));
 }
 
 void digital_in_read()
 {
-  digital_in_starter = !digitalRead(15);
-  digital_in_enable = !digitalRead(4); 
+  digital_in_starter = !digitalRead(16);
+  digital_in_enable = !digitalRead(7); 
 }
 
 void relay_set(uint8_t value)
 {
-  digitalWrite(8, value);
-}
-
-void esc_enable(uint8_t value)
-{
-  digitalWrite(3, !value);
+  digitalWrite(15, value);
 }
 
 void digital_in_setup()
 {
-  pinMode(15, INPUT_PULLUP);
-  pinMode(4, INPUT_PULLUP);
-  pinMode(8, OUTPUT);
+  pinMode(16, INPUT_PULLUP);
+  pinMode(7, INPUT_PULLUP);
+  pinMode(15, OUTPUT);
   pinMode(3, OUTPUT);
+  pinMode(5, OUTPUT);
 }
 
 void apply_vout_filter()
@@ -106,8 +109,8 @@ void output_set(uint32_t value)
 {
   value = value < output_minimum_value ? output_minimum_value : value;
   value = value > output_maximum_value ? output_maximum_value : value;
-  debug_servo_value = (value * 180) / 1024;
-  servo.write(debug_servo_value);
+  debug_servo_value = value;
+  servo.write((value*180)/1024);
 }
 
 void dummy_load_set(uint8_t value)
@@ -117,25 +120,39 @@ void dummy_load_set(uint8_t value)
 
 void print_all()
 {
-    Serial.print(current_state);
-    Serial.print(" ");
-    Serial.print(vout_get());
-    Serial.print(" ");
-    Serial.print(debug_servo_value);
-    Serial.print(" ");
-//    Serial.print(pid.aggE);
-//    Serial.print(" ");
+//    Serial11.print(current_state*5000);
+//    Serial11.print(" ");
+    Serial1.print(vout_get());
+    Serial1.print(" ");
+//    Serial1.print(m_a.getValue());
+//    Serial1.print(" ");
+//    Serial1.print(m_v.getValue());
+//    Serial1.print(" ");
+//    Serial1.print(o_a.getValue());
+//    Serial1.print(" ");
+//    Serial1.print(o_v.getValue());
+//    Serial1.print(" ");
+    Serial1.print(pid.aggE*10);
+    Serial1.print(" ");
+    Serial1.print(pid.ret*100);
+    Serial1.print(" ");
 //
-//    Serial.print(t1iir.getValue());
-//    Serial.print(" ");
-//    Serial.print(t2iir.getValue());
-//    Serial.print(" ");
+//    Serial1.print(t1iir.getValue());
+//    Serial1.print(" ");
+//    Serial1.print(t2iir.getValue());
+//    Serial1.print(" ");
 
-//  Serial.print(servo_esc_delay);
+//  Serial1.print(servo_esc_delay);
 
-  Serial.print(motor_dead_count);
+  Serial1.print(motor_dead_count*1000);
+  
+    Serial1.print(" ");
+    Serial1.print((output_maximum_value-output_minimum_value)*100);
+    Serial1.print(" ");
+    Serial1.print((debug_servo_value-output_minimum_value)*100);
+//    Serial1.print(digital_in_enable*10000);
 
-  Serial.println(" ");
+  Serial1.println(" ");
 }
 
 SIGNAL(TIMER0_COMPA_vect)
@@ -150,12 +167,12 @@ SIGNAL(TIMER0_COMPA_vect)
 
 void setup()
 {
-  Serial.begin(9600);
-  //while (!Serial);
+  Serial1.begin(9600);
+  //while (!Serial1);
   pinMode(9, OUTPUT);
-  servo.attach(6);
+  servo.attach(9);
   servo_esc.attach(10);
-  servo_suction.attach(9);
+  servo_suction.attach(5);
 
   digital_in_setup();
 
@@ -195,7 +212,7 @@ void loop_idle()
   pid.reset();
   output_set(output_idle_value);
   relay_set(RELAY_POS_RECTIFIER);
-  esc_enable(0);
+
   servo_esc.write(servo_esc_idle_value);
   
   if(vout_get() < motor_dead_threshold)
@@ -218,7 +235,7 @@ void loop_starting()
 {
   dummy_load_set(0);
   relay_set(RELAY_POS_ESC);
-  esc_enable(1);
+
   motor_dead_count = 0;
   if(servo_esc_delay > 0)
   {
@@ -258,13 +275,13 @@ void loop_powering_up()
 void loop_running()
 {
   double e = ((double)setpoint - (double)vout_get()) / 1000.0;
-  double u = pid.loop(e);
+  double u = pid.loop(e) + output_minimum_value;
   u = u > 1000 ? 1000 : u;
   u = u < output_minimum_value ? output_minimum_value : u;
   uint32_t uU = u;
   output_set(uU);
   relay_set(RELAY_POS_RECTIFIER);
-  esc_enable(0);
+
   servo_esc.write(servo_esc_idle_value);
 
   if(vout_get() < motor_dead_threshold)

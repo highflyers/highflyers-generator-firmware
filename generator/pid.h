@@ -13,12 +13,11 @@ public:
 
 	double loop(double e)
 	{
-		double ret = 0.0;
+		ret = 0.0;
 		aggE += e;
     aggE = aggE > uMax/pI ? uMax/pI : aggE;
-    aggE = aggE < uMin/pI ? uMin/pI : aggE;
-		ret = pP * (e + pI * aggE);
-
+    aggE = aggE < -uMax/pI ? -uMax/pI : aggE;
+    ret = (pP * e) + (pI * aggE);
 		return ret;
 	}
 
@@ -29,5 +28,5 @@ public:
 
 public:
 	double pP, pI, pD, uMin, uMax;
-	double aggE;
+	double aggE, ret;
 };
